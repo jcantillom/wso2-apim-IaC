@@ -1,0 +1,267 @@
+trigger:
+  branches:
+    include:
+      - trunk
+
+pr:
+  branches:
+    include:
+      - trunk
+
+# =========================
+# PARÁMETROS
+# =========================
+parameters:
+  - name: environment
+    displayName: "Ambiente"
+    type: string
+    default: dev
+    values:
+      - dev
+      - qa
+      - pdn
+
+  - name: terraform_action
+    displayName: "Acción de Terraform"
+    type: string
+    default: plan
+    values:
+      - plan
+      - apply
+      - destroy
+
+  - name: destroy_confirmation
+    displayName: "Solo para DESTROY: escribe exactamente 'DESTROY'. Para plan/apply déjalo como está."
+    type: string
+    default: "NO-DESTROY"
+
+
+variables:
+  - template: .azure-pipelines/vars/env.yml
+    parameters:
+      environment: ${{ parameters.environment }}
+
+# =========================
+# STAGES
+# =========================
+stages:
+  # =========================
+  # STAGE: PLAN
+  # =========================
+  - stage: Plan
+    displayName: "Terraform PLAN - ${{ parameters.environment }}"
+    jobs:
+      - job: terraform_plan
+        displayName: "Terraform plan (${{ parameters.environment }})"
+        pool:
+          name: cantillo-agent
+
+        steps:
+          - checkout: self
+            displayName: "Checkout repo"
+
+          - script: |
+              echo "======================================="
+              echo " Ambiente objetivo          : ${{ parameters.environment }}"
+              echo " Acción de Terraform        : ${{ parameters.terraform_action }}"
+              echo " Directorio raíz del repo   : $(Build.SourcesDirectory)"
+              echo " Directorio de trabajo TF   : $(TF_WORKING_DIR)"
+              echo " Backend bucket             : $(TF_BACKEND_BUCKET)"
+              echo " Backend key                : $(TF_BACKEND_KEY)"
+              echo " Backend region             : $(TF_BACKEND_REGION)"
+              echo " DynamoDB table             : $(TF_BACKEND_DDB_TABLE)"
+              echo " Service Connection AWS     : $(AWS_SERVICE_CONNECTION)"
+              echo "======================================="
+            displayName: "Mostrar contexto de ejecución"
+
+          - task: AWSShellScript@1
+            name: terraformPlan
+            displayName: "Terraform init & plan (${{ parameters.environment }})"
+            inputs:
+              awsCredentials: "$(AWS_SERVICE_CONNECTION)"
+              regionName: "$(TF_BACKEND_REGION)"
+              scriptType: "inline"
+              inlineScript: |
+                set -euo pipefail
+                
+                echo ">> Entrando al directorio de Terraform..."
+                cd "$(Build.SourcesDirectory)/$(TF_WORKING_DIR)"
+                pwd
+                
+                echo ">> Exportando variables TF_VAR_* para Terraform..."
+                export TF_VAR_env='$(TF_VAR_env)'
+                export TF_VAR_aws_region='$(TF_VAR_aws_region)'
+                export TF_VAR_vpc_id='$(TF_VAR_vpc_id)'
+                export TF_VAR_private_app_subnets='$(TF_VAR_private_app_subnets)'
+                export TF_VAR_alb_subnets='$(TF_VAR_alb_subnets)'
+                export TF_VAR_allowed_cidrs_alb='$(TF_VAR_allowed_cidrs_alb)'
+                export TF_VAR_certificate_arn='$(TF_VAR_certificate_arn)'
+                export TF_VAR_console_image='$(TF_VAR_console_image)'
+                export TF_VAR_gateway_image='$(TF_VAR_gateway_image)'
+                export TF_VAR_route53_zone_id='$(TF_VAR_route53_zone_id)'
+                export TF_VAR_route53_record_name='$(TF_VAR_route53_record_name)'
+                
+                
+                echo "TF_VAR_env                 = $TF_VAR_env"
+                echo "TF_VAR_aws_region          = $TF_VAR_aws_region"
+                echo "TF_VAR_vpc_id              = $TF_VAR_vpc_id"
+                echo "TF_VAR_private_app_subnets = $TF_VAR_private_app_subnets"
+                echo "TF_VAR_alb_subnets         = $TF_VAR_alb_subnets"
+                echo "TF_VAR_allowed_cidrs_alb   = $TF_VAR_allowed_cidrs_alb"
+                echo "TF_VAR_certificate_arn     = $TF_VAR_certificate_arn"
+                echo "TF_VAR_console_image       = $TF_VAR_console_image"
+                echo "TF_VAR_gateway_image       = $TF_VAR_gateway_image"
+                echo "TF_VAR_route53_zone_id     = $TF_VAR_route53_zone_id"
+                echo "TF_VAR_route53_record_name = $TF_VAR_route53_record_name"
+                
+                echo ">> terraform init con backend remoto..."
+                terraform init \
+                  -backend-config="bucket=$(TF_BACKEND_BUCKET)" \
+                  -backend-config="key=$(TF_BACKEND_KEY)" \
+                  -backend-config="region=$(TF_BACKEND_REGION)" \
+                  -backend-config="dynamodb_table=$(TF_BACKEND_DDB_TABLE)" \
+                  -backend-config="encrypt=true"
+                
+                echo ">> terraform validate..."
+                terraform validate
+                
+                echo ">> terraform plan..."
+                terraform plan -out=tfplan.out
+                
+                echo ">> Exportando resumen del plan a tfplan.txt..."
+                terraform show -no-color tfplan.out > tfplan.txt
+
+          - publish: "$(TF_WORKING_DIR)/tfplan.txt"
+            artifact: "tfplan-${{ parameters.environment }}"
+            displayName: "Publicar plan (tfplan.txt)"
+
+  # =========================
+  # STAGE: APPLY
+  # =========================
+  - stage: Apply
+    displayName: "Terraform APPLY - ${{ parameters.environment }}"
+    dependsOn: Plan
+    condition: and(succeeded(), eq('${{ parameters.terraform_action }}', 'apply'))
+
+    jobs:
+      - job: terraform_apply
+        displayName: "Terraform apply (${{ parameters.environment }})"
+        pool:
+          name: cantillo-agent
+
+        steps:
+          - checkout: self
+            displayName: "Checkout repo"
+
+          - task: AWSShellScript@1
+            name: terraformApply
+            displayName: "Terraform init & apply (${{ parameters.environment }})"
+            inputs:
+              awsCredentials: "$(AWS_SERVICE_CONNECTION)"
+              regionName: "$(TF_BACKEND_REGION)"
+              scriptType: "inline"
+              inlineScript: |
+                set -euo pipefail
+                
+                echo ">> Entrando al directorio de Terraform..."
+                cd "$(Build.SourcesDirectory)/$(TF_WORKING_DIR)"
+                pwd
+                
+                echo ">> Exportando variables TF_VAR_* para Terraform..."
+                export TF_VAR_env='$(TF_VAR_env)'
+                export TF_VAR_aws_region='$(TF_VAR_aws_region)'
+                export TF_VAR_vpc_id='$(TF_VAR_vpc_id)'
+                export TF_VAR_private_app_subnets='$(TF_VAR_private_app_subnets)'
+                export TF_VAR_alb_subnets='$(TF_VAR_alb_subnets)'
+                export TF_VAR_allowed_cidrs_alb='$(TF_VAR_allowed_cidrs_alb)'
+                export TF_VAR_certificate_arn='$(TF_VAR_certificate_arn)'
+                export TF_VAR_console_image='$(TF_VAR_console_image)'
+                export TF_VAR_gateway_image='$(TF_VAR_gateway_image)'
+                export TF_VAR_route53_zone_id='$(TF_VAR_route53_zone_id)'
+                export TF_VAR_route53_record_name='$(TF_VAR_route53_record_name)'
+                
+                echo "TF_VAR_env                 = $TF_VAR_env"
+                echo "TF_VAR_aws_region          = $TF_VAR_aws_region"
+                echo "TF_VAR_vpc_id              = $TF_VAR_vpc_id"
+                echo "TF_VAR_private_app_subnets = $TF_VAR_private_app_subnets"
+                echo "TF_VAR_alb_subnets         = $TF_VAR_alb_subnets"
+                echo "TF_VAR_allowed_cidrs_alb   = $TF_VAR_allowed_cidrs_alb"
+                echo "TF_VAR_certificate_arn     = $TF_VAR_certificate_arn"
+                echo "TF_VAR_console_image       = $TF_VAR_console_image"
+                echo "TF_VAR_gateway_image       = $TF_VAR_gateway_image"
+                echo "TF_VAR_route53_zone_id     = $TF_VAR_route53_zone_id"
+                echo "TF_VAR_route53_record_name = $TF_VAR_route53_record_name"
+                
+                echo ">> terraform init (mismo backend que en PLAN)..."
+                terraform init \
+                  -backend-config="bucket=$(TF_BACKEND_BUCKET)" \
+                  -backend-config="key=$(TF_BACKEND_KEY)" \
+                  -backend-config="region=$(TF_BACKEND_REGION)" \
+                  -backend-config="dynamodb_table=$(TF_BACKEND_DDB_TABLE)" \
+                  -backend-config="encrypt=true"
+                
+                echo ">> terraform apply -auto-approve..."
+                terraform apply -auto-approve
+
+  # =========================
+  # STAGE: DESTROY
+  # =========================
+  - stage: Destroy
+    displayName: "Terraform DESTROY - ${{ parameters.environment }}"
+    dependsOn: Plan
+    condition: and(succeeded(), eq('${{ parameters.terraform_action }}', 'destroy'), eq('${{ parameters.destroy_confirmation }}', 'DESTROY'))
+
+    jobs:
+      - job: terraform_destroy
+        displayName: "Terraform destroy (${{ parameters.environment }})"
+        pool:
+          name: cantillo-agent
+
+        steps:
+          - checkout: self
+            displayName: "Checkout repo"
+
+          - script: |
+              echo "======================================="
+              echo " *** ATENCIÓN: EJECUTANDO DESTROY *** "
+              echo " Ambiente: ${{ parameters.environment }}"
+              echo " Acción:   ${{ parameters.terraform_action }}"
+              echo " Confirmación recibida: '${{ parameters.destroy_confirmation }}'"
+              echo "======================================="
+            displayName: "Mostrar confirmación de destroy"
+
+          - task: AWSShellScript@1
+            name: terraformDestroy
+            displayName: "Terraform init & destroy (${{ parameters.environment }})"
+            inputs:
+              awsCredentials: "$(AWS_SERVICE_CONNECTION)"
+              regionName: "$(TF_BACKEND_REGION)"
+              scriptType: "inline"
+              inlineScript: |
+                set -euo pipefail
+                
+                echo ">> Entrando al directorio de Terraform para DESTROY..."
+                cd "$(Build.SourcesDirectory)/$(TF_WORKING_DIR)"
+                pwd
+                
+                echo ">> Exportando variables TF_VAR_* para Terraform..."
+                export TF_VAR_env='$(TF_VAR_env)'
+                export TF_VAR_aws_region='$(TF_VAR_aws_region)'
+                export TF_VAR_vpc_id='$(TF_VAR_vpc_id)'
+                export TF_VAR_private_app_subnets='$(TF_VAR_private_app_subnets)'
+                export TF_VAR_alb_subnets='$(TF_VAR_alb_subnets)'
+                export TF_VAR_allowed_cidrs_alb='$(TF_VAR_allowed_cidrs_alb)'
+                export TF_VAR_certificate_arn='$(TF_VAR_certificate_arn)'
+                export TF_VAR_console_image='$(TF_VAR_console_image)'
+                export TF_VAR_gateway_image='$(TF_VAR_gateway_image)'
+                
+                echo ">> terraform init (mismo backend remoto)..."
+                terraform init \
+                  -backend-config="bucket=$(TF_BACKEND_BUCKET)" \
+                  -backend-config="key=$(TF_BACKEND_KEY)" \
+                  -backend-config="region=$(TF_BACKEND_REGION)" \
+                  -backend-config="dynamodb_table=$(TF_BACKEND_DDB_TABLE)" \
+                  -backend-config="encrypt=true"
+                
+                echo ">> terraform destroy -auto-approve..."
+                terraform destroy -auto-approve
