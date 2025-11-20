@@ -130,3 +130,17 @@ variable "namespace_id" {
     error_message = "Si enable_service_discovery = true, debes pasar un namespace_id válido."
   }
 }
+
+# ==============================
+# EXTRAS NUEVOS
+# ==============================
+
+variable "aws_region" {
+  description = "Región de AWS (para CloudWatch Logs)"
+  type        = string
+}
+
+variable "task_role_arn" {
+  description = "ARN del rol de la tarea ECS (permisos de la app)"
+  type        = string
+}

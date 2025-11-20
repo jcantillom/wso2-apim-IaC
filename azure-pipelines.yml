@@ -254,6 +254,10 @@ stages:
                 export TF_VAR_certificate_arn='$(TF_VAR_certificate_arn)'
                 export TF_VAR_console_image='$(TF_VAR_console_image)'
                 export TF_VAR_gateway_image='$(TF_VAR_gateway_image)'
+                export TF_VAR_route53_zone_id='$(TF_VAR_route53_zone_id)'
+                export TF_VAR_route53_record_name='$(TF_VAR_route53_record_name)'
+                
+                
                 
                 echo ">> terraform init (mismo backend remoto)..."
                 terraform init \

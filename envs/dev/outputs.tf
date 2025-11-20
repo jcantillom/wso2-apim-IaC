@@ -38,22 +38,22 @@ output "ecs_cluster_arn" {
   value       = module.ecs_cluster.cluster_arn
 }
 
-# output "ecs_gateway_service_arn" {
-#   description = "ARN del servicio ECS del Gateway"
-#   value       = module.ecs_service_gateway.service_arn
-# }
-#
-# output "ecs_console_service_arn" {
-#   description = "ARN del servicio ECS de la Console"
-#   value       = module.ecs_service_console.service_arn
-# }
+output "ecs_gateway_service_arn" {
+  description = "ARN del servicio ECS del Gateway"
+  value       = module.ecs_service_gateway.service_arn
+}
 
-# output "logs_gateway" {
-#   description = "Log group de CloudWatch para el Gateway"
-#   value       = module.ecs_service_gateway.log_group_name
-# }
-#
-# output "logs_console" {
-#   description = "Log group de CloudWatch para la Console"
-#   value       = module.ecs_service_console.log_group_name
-# }
+output "ecs_console_service_arn" {
+  description = "ARN del servicio ECS de la Console"
+  value       = module.ecs_service_console.service_arn
+}
+
+output "logs_gateway" {
+  description = "Log group de CloudWatch para el Gateway"
+  value       = module.ecs_service_gateway.log_group_name
+}
+
+output "logs_console" {
+  description = "Log group de CloudWatch para la Console"
+  value       = module.ecs_service_console.log_group_name
+}

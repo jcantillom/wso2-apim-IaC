@@ -4,7 +4,6 @@ locals {
   base_tags = {
     Ambiente       = var.env
     Despliegue     = "Terraform"
-    Disponibilidad = "LU-DO-24-08"
     Celula         = "Automation"
     Aplicativo     = "apim"
     Compania       = "Transversal"
@@ -85,14 +84,17 @@ module "ecs_service_gateway" {
   execution_role_arn      = module.ecs_cluster.execution_role_arn
   log_group_path_prefix   = "/ecs/apim/${var.env}"
   log_group_stream_prefix = "gateway"
+
+  aws_region    = var.aws_region
+  task_role_arn = module.ecs_cluster.task_role_arn
   # Service Discovery (Cloud Map)
   enable_service_discovery  = true
   namespace_id              = module.service_discovery.namespace_id
   discovery_service_name    = "gateway"
   discovery_dns_record_type = "A"
   discovery_ttl             = 10
-
 }
+
 
 module "ecs_service_console" {
   source                  = "../../modules/ecs_service"
@@ -111,14 +113,18 @@ module "ecs_service_console" {
   execution_role_arn      = module.ecs_cluster.execution_role_arn
   log_group_path_prefix   = "/ecs/apim/${var.env}"
   log_group_stream_prefix = "console"
+
+  aws_region    = var.aws_region
+  task_role_arn = module.ecs_cluster.task_role_arn
+
   # Service Discovery (Cloud Map)
   enable_service_discovery  = true
   namespace_id              = module.service_discovery.namespace_id
   discovery_service_name    = "console"
   discovery_dns_record_type = "A"
   discovery_ttl             = 10
-
 }
+
 
 # =========================
 # DNS PÚBLICO / FQDN APIM
